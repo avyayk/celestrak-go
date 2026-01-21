@@ -27,10 +27,7 @@ const defaultBaseURL = "https://celestrak.org"
 
 // Cache interface for ETag-aware caching.
 type Cache interface {
-	// Returns cached bytes
 	Get(key string) (data []byte, etag string, ok bool)
-
-	// Stores bytes
 	Put(key string, data []byte, etag string)
 }
 
@@ -64,8 +61,6 @@ func NewClient(httpClient *http.Client) (*Client, error) {
 }
 
 // WithRetries configures retry behavior for transient failures.
-// maxRetries: maximum number of retry attempts (default: 3)
-// retryDelay: initial delay between retries, uses exponential backoff (default: 1s)
 func (c *Client) WithRetries(maxRetries int, retryDelay time.Duration) *Client {
 	c.maxRetries = maxRetries
 	c.retryDelay = retryDelay
@@ -78,7 +73,6 @@ func (c *Client) WithCache(cache Cache) *Client {
 	return c
 }
 
-// WithUserAgent sets the User-Agent header.
 func (c *Client) WithUserAgent(ua string) *Client {
 	c.userAgent = ua
 	return c
@@ -100,18 +94,12 @@ func shouldRetry(err error) bool {
 		return false
 	}
 
-	// Retry on network errors (connection refused, timeout, etc.)
-	// These are typically transient
-
 	// Check for server errors (5xx) - these are retryable
 	if errResp, ok := err.(*ErrorResponse); ok {
 		return errResp.IsServerError()
 	}
 
-	// Retry on context deadline exceeded (might be transient network issue)
-	// But not on context cancelled (user intent)
-
-	// For other errors (network failures, etc.), retry
+	// Retry on network failures and other transient errors
 	return true
 }
 
@@ -121,7 +109,6 @@ func (c *Client) fetchOnce(ctx context.Context, q Query, endpoint string) ([]byt
 		return nil, &QueryError{Message: "context must be non-nil"}
 	}
 
-	// Check context before expensive operations
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context error: %w", err)
 	}
@@ -154,7 +141,6 @@ func (c *Client) fetchOnce(ctx context.Context, q Query, endpoint string) ([]byt
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Check if error is due to context cancellation/timeout
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("request cancelled: %w", ctx.Err())
 		}
@@ -167,7 +153,6 @@ func (c *Client) fetchOnce(ctx context.Context, q Query, endpoint string) ([]byt
 		if hasCache {
 			return cached, nil
 		}
-		// If server says not modified but we don't have cached bytes, treat as error.
 		return nil, &ErrorResponse{
 			Response: resp,
 			Message:  "304 Not Modified but no cached body available",
@@ -221,25 +206,21 @@ func (c *Client) fetchOnce(ctx context.Context, q Query, endpoint string) ([]byt
 	return body, nil
 }
 
-// fetch fetches data from the specified endpoint as raw bytes with automatic retries.
-// This is the internal method used by all public Fetch methods.
+// fetch fetches data from the specified endpoint with automatic retries.
 func (c *Client) fetch(ctx context.Context, q Query, endpoint string) ([]byte, error) {
 	var lastErr error
 	delay := c.retryDelay
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		// Check context before each attempt
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("context cancelled: %w", err)
 		}
 
-		// Wait before retry (skip on first attempt)
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("context cancelled during retry: %w", ctx.Err())
 			case <-time.After(delay):
-				// Exponential backoff: double the delay each time
 				delay *= 2
 			}
 		}
@@ -251,12 +232,10 @@ func (c *Client) fetch(ctx context.Context, q Query, endpoint string) ([]byte, e
 
 		lastErr = err
 
-		// Don't retry if error is not retryable
 		if !shouldRetry(err) {
 			return nil, err
 		}
 	}
 
-	// All retries exhausted
 	return nil, fmt.Errorf("max retries (%d) exceeded: %w", c.maxRetries, lastErr)
 }

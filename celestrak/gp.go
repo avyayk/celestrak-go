@@ -2,8 +2,7 @@ package celestrak
 
 import "context"
 
-// FetchGP fetches GP data as raw bytes from gp.php endpoint.
-// This works for TLE/XML/CSV/JSON formats.
+// FetchGP fetches GP data from gp.php endpoint.
 func (c *Client) FetchGP(ctx context.Context, q Query) ([]byte, error) {
 	return c.fetch(ctx, q, "gp.php")
 }
