@@ -412,5 +412,5 @@ Contributions welcome. Open issues or submit pull requests.
 
 ## License
 
-[Add your license here]
+[LICENSE]
 
